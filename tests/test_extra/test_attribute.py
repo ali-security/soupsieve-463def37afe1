@@ -1,5 +1,8 @@
 """Test attribute selectors."""
 from .. import util
+import signal
+import time
+import soupsieve as sv
 
 
 class TestAttribute(util.TestCase):
@@ -50,3 +53,33 @@ class TestAttribute(util.TestCase):
             ["div", "0", "1", "2", "3", "pre", "4", "6"],
             flags=util.HTML5
         )
+
+    def test_bad_attribute_unclused(self):
+        """Test bad attribute fails for syntax error, not timeout error."""
+
+        # Unterminated values for both quote styles.
+        for pattern in ('[a="' + ('x' * 300), "[a='" + ('x' * 300)):
+            if hasattr(signal, 'SIGALRM'):
+                # Abort the parse if it takes too long (catastrophic backtracking).
+                def timeout_handler(signum, frame):
+                    raise TimeoutError
+
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(3)
+
+                passed = False
+                try:
+                    with self.assertRaises(sv.SelectorSyntaxError):
+                        sv.compile(pattern)
+                    passed = True
+                except TimeoutError:
+                    pass
+                finally:
+                    signal.alarm(0)
+                self.assertTrue(passed)
+            else:
+                # `SIGALRM` is not available (Windows), so time the parse instead.
+                start = time.perf_counter()
+                with self.assertRaises(sv.SelectorSyntaxError):
+                    sv.compile(pattern)
+                self.assertLess(time.perf_counter() - start, 3)
